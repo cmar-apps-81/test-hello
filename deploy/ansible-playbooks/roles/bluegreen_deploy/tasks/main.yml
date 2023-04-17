@@ -1,0 +1,60 @@
+---
+
+- name: get context
+  set_fact:
+    context: "{{ k8s_context }}"
+
+- name: split microservices lines
+  set_fact:
+    micro_services_list: "{{ micro_services.splitlines() }}"
+
+- include_tasks: parse_versions.yml
+  with_items: "{{ micro_services_list }}"
+
+- name: split microservices lines
+  set_fact:
+    services: "{{ services_dict | dict2items }}"
+
+- name: check all version of microservices exist in ECR
+  include_tasks: check_images.yml
+  loop: "{{ services }}"
+  when: skip_image_check is not defined or skip_image_check == false
+
+- block:
+  - name: Deploy microservices new versions
+    block:
+    - include_tasks: bg_deploy.yml
+      loop: "{{ services }}"
+
+    - include_tasks: bg_checkdeploy.yml
+      loop: "{{ services }}"
+
+    - include_tasks: bg_svc.yml
+      loop: "{{ services }}"
+
+    - include_tasks: bg_hpa.yml
+      loop: "{{ services }}"
+
+    - include_tasks: bg_cleanup.yml
+      loop: "{{ services }}"
+
+    rescue:
+      - debug:
+          msg: "Unknown error occurred, reverting all changes!"
+
+      - name: revert service changes
+        include_tasks: bg_revertsvc.yml
+        loop: "{{ old_services }}"
+        loop_control:
+          loop_var: service
+        when: old_services is defined
+
+      - name: delete created deployments
+        include_tasks: bg_revertdeploys.yml
+        loop: "{{ deployed_versions | default({}) | dict2items }}"
+        loop_control:
+          loop_var: deploy
+        when: deployed_versions is defined
+
+      - fail:
+          msg: "All services and deploys were reverted despite the error"

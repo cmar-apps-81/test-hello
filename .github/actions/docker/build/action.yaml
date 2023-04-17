@@ -1,0 +1,74 @@
+name: Docker build
+
+inputs:
+  shell:
+    default: bash
+  role-to-assume:
+    required: true
+  image_suffix:
+    default: ""
+  context:
+    default: "."
+  registry:
+    default: "ghcr.io"
+  repository_name:
+    default: ${{ github.repository }}
+  username:
+    default: ${{ github.actor }}
+  password:
+    required: true
+  push:
+    default: "false"
+  tags:
+    required: false
+  flavor:
+    required: false
+
+outputs:
+  metadata:
+    value: ${{ steps.build-and-push.outputs.metadata }}
+
+runs:
+  using: "composite"
+
+  # Steps represent a sequence of tasks that will be executed as part of the job
+  steps:
+    - name: Get release date
+      id: release_date
+      run: echo "::set-output name=date::$(date +'%Y%m%d%H%M')"
+      shell: ${{ inputs.shell }}
+
+    - name: setup docker context for buildx
+      run: docker context create builders
+      shell: ${{ inputs.shell }}
+
+    - name: Setup Docker buildx
+      uses: docker/setup-buildx-action@79abd3f86f79a9d68a23c75a09a9a85889262adf
+      with:
+        endpoint: builders
+
+    - name: Log in to the Container registry
+      uses: docker/login-action@f054a8b539a109f9f41c372932f1ae047eff08c9
+      with:
+        registry: ${{ inputs.registry }}
+        username: ${{ inputs.username }}
+        password: ${{ inputs.password }}
+          
+    - name: Extract Docker metadata
+      id: meta
+      uses: docker/metadata-action@98669ae865ea3cffbcbaa878cf57c20bbf1c6c38
+      with:
+        images: ${{ inputs.registry }}/${{ inputs.repository_name }}
+        tags: ${{ inputs.tags }}
+        flavor: ${{ inputs.flavor }}
+
+    # Build and push Docker image with Buildx
+    # https://github.com/docker/build-push-action
+    - name: Build and push Docker image
+      id: build-and-push
+      uses: docker/build-push-action@ac9327eae2b366085ac7f6a2d02df8aa8ead720a
+      with:
+        context: ${{ inputs.context }}
+        push: ${{ inputs.push }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}

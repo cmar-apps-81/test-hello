@@ -1,0 +1,95 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: database-pvc
+  namespace: app-env
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 128Mi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: database
+    namespace: app-env
+spec:
+    replicas: 1
+    selector:
+        matchLabels:
+            app: database
+            version: v15.2
+            system: test-app
+    template:
+        metadata:
+            labels:
+                app: database
+                version: v15.2
+                system: test-app
+        spec:
+            containers:
+                - name: database
+                  image: postgres:15.2
+                  resources:
+                    requests:
+                        cpu: 120m
+                        memory: 100Mi
+                    limits:
+                        cpu: 240m
+                        memory: 200Mi
+                  ports:
+                    - containerPort: 5432
+                      name: postgres
+                  env:
+                    - name: PGDATA
+                      value: /var/lib/postgresql/data/pgdata
+                    - name: POSTGRES_USER
+                      valueFrom:
+                        secretKeyRef:
+                            name: database
+                            key: database_user
+                    - name: POSTGRES_PASSWORD
+                      valueFrom:
+                        secretKeyRef:
+                            name: database
+                            key: database_password
+                  volumeMounts:
+                    - name: pg-datadir
+                      mountPath: /var/lib/postgresql/data
+                    - name: postgres-initdb
+                      mountPath: /docker-entrypoint-initdb.d/
+            volumes:
+                - name: pg-datadir
+                  persistentVolumeClaim:
+                    claimName: database-pvc
+                - name: postgres-initdb
+                  secret:
+                    secretName: database
+                    items:
+                        - key: 0-bootstrap
+                          path: 0-bootstrap.sql
+---
+apiVersion: v1
+kind: Service
+metadata:
+    name: database
+    namespace: app-env
+    labels:
+        app: database
+        version: v15.2
+        system: test-app
+spec:
+    type: NodePort
+    ports:
+        - name: tcp-test-app-database
+          port: 5432
+          targetPort: 5432
+          protocol: TCP
+    selector:
+        app: database
+        version: v15.2
+        system: test-app

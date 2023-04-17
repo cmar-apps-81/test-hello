@@ -1,0 +1,25 @@
+name: Node tests
+
+inputs:
+  shell:
+    required: false
+    default: sh
+  context:
+    required: false
+    default: "."
+
+runs:
+  using: "composite"
+  steps:
+    - name: Run tests
+      shell: "${{ inputs.shell }}"
+      working-directory: "${{ inputs.context }}"
+      run: |
+        apk --no-cache --virtual build-dependencies add python3 \
+                                                        py-pip
+
+        # install dependencies
+        python3 -m pip install -r requirements.txt
+
+        # run the tests
+        python3 -m pytest tests -v

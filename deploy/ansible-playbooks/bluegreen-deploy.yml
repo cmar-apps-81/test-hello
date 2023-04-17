@@ -1,0 +1,11 @@
+- name: deploy microservices
+  hosts: all
+  gather_facts: false
+  vars:
+    skip_image_check: true
+    kubeconfig: "~/.kube/config"
+    k8s_context: "kind-kind"
+    namespace: "app-env"
+    micro_services: "test-hello:v0.2.0"
+  roles:
+    - bluegreen_deploy

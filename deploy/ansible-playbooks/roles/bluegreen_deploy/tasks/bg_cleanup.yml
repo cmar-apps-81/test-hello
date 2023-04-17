@@ -1,0 +1,16 @@
+---
+- name: get deployment name
+  set_fact:
+    deployment: "{{ microservices_info[item.key]['deployment'] | default(item.key) }}"
+
+- block:
+  - name: get namespace
+    set_fact:
+      namespace: "{{ microservices_info[item.key]['namespace'] }}-{{ env }}"
+    when: namespace is not defined
+
+  - name: delete previous deployment
+    shell: "KUBECONFIG=$KUBECONFIG:{{ kubeconfig }} kubectl delete deployment {{ deployment }}-{{ item.value.old_version }} -n {{ namespace }} --context {{ context }}"
+    register: delete_previous_deployments_status_output
+
+  when: deployed_versions is defined and deployment in deployed_versions

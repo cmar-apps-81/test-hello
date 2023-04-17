@@ -1,0 +1,31 @@
+name: Push
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ '**' ]
+
+permissions:
+  id-token: write
+  contents: write
+  packages: write
+
+jobs:
+  build:
+    name: Build ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Docker build
+        uses: ./.github/actions/docker/build
+        id: docker-build
+        with:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          push: true
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref_name == 'main' || github.ref_name == 'master' }}
+            type=sha,format=long,prefix=,enable=${{ github.ref_name == 'main' || github.ref_name == 'master' }}
+            type=raw,value=dev-latest,enable=${{ github.ref_name == 'develop' }}
+            type=sha,format=long,prefix=dev-,enable=${{ github.ref_name == 'develop' }}
+            type=raw,value={{tag}},enable=${{ github.ref_type == 'tag' }}

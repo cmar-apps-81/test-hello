@@ -1,0 +1,18 @@
+---
+- name: get service name
+  shell: "KUBECONFIG=$KUBECONFIG:{{ kubeconfig }} kubectl get svc -n {{ deployed_versions[service].namespace }} --context {{ context }} | grep -w \"^{{ service }}\" | awk '{print $1}'"
+  register: service_name_output
+  changed_when: false
+
+- name: update service to previous deployment version
+  shell: 'KUBECONFIG=$KUBECONFIG:{{ kubeconfig }} kubectl get svc {{ service_name_output.stdout }} -n {{  deployed_versions[service].namespace }} --context {{ context }} -o yaml | sed  "s/{{ deployed_versions[service].new_version | regex_replace("-", ".") }}/{{ deployed_versions[service].old_version | regex_replace("-", ".") }}/" | KUBECONFIG=$KUBECONFIG:{{ kubeconfig }} kubectl apply --context {{ context }} -f -'
+  register: new_service_output
+
+- name: get old service endpoints number
+  shell: "KUBECONFIG=$KUBECONFIG:{{ kubeconfig }} kubectl get endpoints {{ service_name_output.stdout }} -n {{  deployed_versions[service].namespace }} --context {{ context }} -o yaml | grep 'ip:' | wc -l"
+  register: revert_get_endpoints_number_status_output
+  changed_when: false
+
+- fail:
+    msg: "Error while reverting service, endpoints for {{ service_name_output.stdout }} were not available, please check all services and endpoints"
+  when: revert_get_endpoints_number_status_output.stdout != deployed_versions[service].endpoints

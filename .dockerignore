@@ -1,0 +1,10 @@
+.*
+deploy
+instance
+migrations
+docker-compose*
+*bk*
+build.sh
+deploy_bluegreen.sh
+diagrams
+scripts
