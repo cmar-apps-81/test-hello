@@ -1,0 +1,11 @@
+---
+- name: check if image exists in ecr
+  shell: "AWS_SESSION_TOKEN={{ aws_security_token }} AWS_ACCESS_KEY_ID={{aws_access_key }} AWS_SECRET_ACCESS_KEY={{ aws_secret_key }} aws ecr list-images --region {{ region }} --repository-name={{ item.key }} | /usr/bin/jq '.imageIds' -r | grep imageTag | awk -F':' '{print $2}' | grep '\"{{ item.value.tag }}\"'"
+  register: check_repo_output
+  changed_when: false
+  no_log: true
+
+- name: fail if image does not exist
+  fail:
+    msg: "Image tag '{{ item.value.tag }}' does not exist for {{ item.key }}"
+  when: check_repo_output.stdout == ""

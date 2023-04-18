@@ -1,0 +1,6 @@
+---
+kubeconfig: /root/.kube/config
+deploy_timeout: 3m
+
+# based on https://semver.org/#is-there-a-suggested-regular-expression-regex-to-check-a-semver-string
+semver_regex: v(0|[1-9][0-9]*)([.-])(0|[1-9][0-9]*)([.-])(0|[1-9][0-9]*)(-[a-zA-Z0-9]+)?

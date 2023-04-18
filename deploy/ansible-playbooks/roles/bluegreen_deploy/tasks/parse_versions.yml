@@ -1,0 +1,48 @@
+- name: get reponame
+  set_fact:
+    reponame: "{{ item | regex_replace('^(.*):(.*)$', '\\1') }}"
+
+- name: get deployment name
+  set_fact:
+    deployment: "{{ microservices_info[reponame]['deployment'] | default(reponame) }}"
+
+- name: get namespace
+  set_fact:
+    namespace: "{{ microservices_info[reponame]['namespace'] }}-{{ env }}"
+  when: namespace is not defined
+
+- name: get current deployment
+  shell: "KUBECONFIG=$KUBECONFIG:{{ kubeconfig }} kubectl get deployments -n {{ namespace }} --context {{ context }} | grep -w \"^{{ deployment }}\" | awk '{print $1}'"
+  register: current_deployment_status_output
+  changed_when: false
+
+- name: get old version
+  set_fact:
+    old_version: "v{{ current_deployment_status_output.stdout | regex_replace('^(.*)-v(.*)$', '\\2') }}"
+
+- name: get new version to deploy
+  set_fact:
+    tag: "{{ item | regex_replace('^(.*):(.*)$', '\\2') | trim }}"
+    new_version: "{{ item | regex_replace('^(.*):(.*)$', '\\2') | trim }}"
+
+- name: fail if invalid version format
+  fail:
+    msg: "{{ reponame }} version is not in a correct format (vX.X.X -> '{{ new_version }}')"
+  when: new_version is not regex(semver_regex)
+
+- name: update version to use dashes as separator if previous version has dashes too
+  set_fact:
+    new_version: "{{ new_version | regex_replace('\\.', '-') }}"
+  when: old_version | regex_search('^v[0-9]+-[0-9]+-[0-9]+')
+
+- name: build struct
+  set_fact:
+    services_dict: "{{ services_dict | default([]) | combine(
+      { reponame:
+        {
+          'tag': tag,
+          'old_version': old_version,
+          'new_version': new_version
+        }
+      }
+    ) }}"

@@ -1,0 +1,31 @@
+---
+- name: get deployment name
+  set_fact:
+    deployment: "{{ microservices_info[item.key]['deployment'] | default(item.key) }}"
+
+- block:
+  - name: get namespace
+    set_fact:
+      namespace: "{{ microservices_info[item.key]['namespace'] }}-{{ env }}"
+    when: namespace is not defined
+
+  - name: wait for deploy to finish
+    shell: "KUBECONFIG=$KUBECONFIG:{{ kubeconfig }} timeout {{ deploy_timeout }} kubectl rollout status deployment.v1.apps/{{ deployment }}-{{ item.value.new_version }} -n {{ namespace }} --context {{ context }} -w"
+    register: rollout_status_output
+    changed_when: false
+    failed_when: false
+
+  - block:
+    - debug:
+        msg: "Error while deploying new services, reverting changes!!!"
+
+    - name: delete created deployments
+      include_tasks: bg_revertdeploys.yml
+      loop: "{{ deployed_versions | default({}) | dict2items }}"
+      loop_control:
+        loop_var: deploy
+
+    - fail:
+        msg: "Error while deploying version {{ item.value.new_version }} of {{ deployment }}, all previously deployed services were deleted"
+    when: rollout_status_output.rc != 0
+  when: deployed_versions is defined and deployment in deployed_versions

@@ -1,0 +1,63 @@
+---
+- name: get deployment name
+  set_fact:
+    deployment: "{{ microservices_info[item.key]['deployment'] | default(item.key) }}"
+
+- block:
+  - name: get namespace
+    set_fact:
+      namespace: "{{ microservices_info[item.key]['namespace'] }}-{{ env }}"
+    when: namespace is not defined
+
+  - name: get current service name
+    shell: "KUBECONFIG=$KUBECONFIG:{{ kubeconfig }} kubectl get svc -n {{ namespace }} --context {{ context }} | grep -w \"^{{ deployment }}\" | awk '{print $1}'"
+    register: service_status_output
+    changed_when: false
+
+  - block:
+    - name: get current service endpoints number
+      shell: "KUBECONFIG=$KUBECONFIG:{{ kubeconfig }} kubectl get endpoints {{ service_status_output.stdout }} -n {{ namespace }} --context {{ context }} -o yaml | grep 'ip:' | wc -l"
+      register: get_previous_endpoints_number_output
+      changed_when: false
+
+    - name: add service endpoints to deployed_versions
+      set_fact:
+        deployed_versions: "{{ deployed_versions | combine({ deployment: { 'endpoints': get_previous_endpoints_number_output.stdout }}, recursive=True) }}"
+
+    - name: set service version
+      set_fact:
+        service_version: "{{ deployed_versions[deployment].new_version | regex_replace('v(\\d+)-(\\d+)-(\\d+)((-(.*))?|)', 'v\\1.\\2.\\3\\4') }}"
+
+    - name: update service to new deployment version
+      shell: 'KUBECONFIG=$KUBECONFIG:{{ kubeconfig }} kubectl patch svc {{ service_status_output.stdout }} -n {{ namespace }} --context {{ context }} -p "{\"spec\":{\"selector\": { \"version\": \"{{ service_version }}\"}}}"'
+
+    - name: get new service endpoints number
+      shell: "KUBECONFIG=$KUBECONFIG:{{ kubeconfig }} kubectl get endpoints {{ service_status_output.stdout }} -n {{ namespace }} --context {{ context }} -o yaml | grep 'ip:' | wc -l"
+      register: get_endpoints_number_status_output
+      changed_when: false
+
+    - name: set updated services
+      set_fact:
+        old_services: "{{ old_services | default([]) + [ deployment ] }}"
+
+    - block:
+      - debug:
+          msg: "Error while updating services to new endpoints, reverting all changes!"
+
+      - name: revert service changes
+        include_tasks: bg_revertsvc.yml
+        loop: "{{ old_services }}"
+        loop_control:
+          loop_var: service
+
+      - name: delete created deployments
+        include_tasks: bg_revertdeploys.yml
+        loop: "{{ deployed_versions | default({}) | dict2items }}"
+        loop_control:
+          loop_var: deploy
+
+      - fail:
+          msg: "Deploy failed because new service endpoints for {{ service_status_output.stdout }} were not available, reverted service to old endpoints and deleted created deployments"
+      when: get_endpoints_number_status_output.stdout != get_previous_endpoints_number_output.stdout
+    when: service_status_output.stdout != ""
+  when: deployed_versions is defined and deployment in deployed_versions

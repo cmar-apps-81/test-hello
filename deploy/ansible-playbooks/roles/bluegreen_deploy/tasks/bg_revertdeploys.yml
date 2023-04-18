@@ -1,0 +1,4 @@
+---
+- name: delete previous deployment
+  shell: "KUBECONFIG=$KUBECONFIG:{{ kubeconfig }} kubectl delete deployment {{ deploy.key }}-{{ deploy.value.new_version }} -n {{ deploy.value.namespace }} --context {{ context }}"
+  register: delete_previous_deployments_status_output

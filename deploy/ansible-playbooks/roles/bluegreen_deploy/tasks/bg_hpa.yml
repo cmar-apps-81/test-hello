@@ -1,0 +1,38 @@
+---
+- name: get deployment name
+  set_fact:
+    deployment: "{{ microservices_info[item.key]['deployment'] | default(item.key) }}"
+
+- name: get namespace
+  set_fact:
+    namespace: "{{ microservices_info[item.key]['namespace'] }}-{{ env }}"
+  when: namespace is not defined
+
+- name: check if hpa is enabled for {{ deployment }}
+  shell: 'KUBECONFIG=$KUBECONFIG:{{ kubeconfig }} kubectl get hpa {{ deployment }} -n {{ namespace }} --context {{ context }}'
+  register: check_hpa_status_output
+  failed_when: false
+  changed_when: false
+
+- block:
+  - name: check if new_version is different from current one
+    debug:
+      msg: "Desired version is already running"
+    when: item.value.new_version == item.value.old_version
+
+  - name: create sed command instruction (vX\2Y\4Z-ABC)
+    shell: 'echo {{ item.value.new_version }} | sed -r "s/{{ semver_regex }}/v\1\\\2\3\\\4\5\6/"'
+    register: res
+
+  - name: set sed version flag to use on replace
+    set_fact:
+      sed_replace_version: "{{ res.stdout }}"
+
+  - block:
+    - name: update hpa
+      shell: 'KUBECONFIG=$KUBECONFIG:{{ kubeconfig }} kubectl get hpa {{ deployment }} -n {{ namespace }} --context {{ context }} -o yaml | sed -r "s,{{ semver_regex }},{{ sed_replace_version }}," | KUBECONFIG=$KUBECONFIG:{{ kubeconfig }} kubectl apply --context {{ context }} -f -'
+      register: update_hpa_status_output
+      failed_when: "'configured' not in update_hpa_status_output.stdout"
+
+    when: item.value.new_version != item.value.old_version
+  when: "'Error from server' not in check_hpa_status_output.stderr"
